@@ -10,6 +10,14 @@ import (
 	"time"
 )
 
+// ============================================================
+// GLOBAL ENCRYPTION KEY
+// ============================================================
+
+// encryptionKey stores the room's encryption key (Base64)
+// This is set when creating or joining a room
+var encryptionKey string
+
 func errCheck(err error) {
 	if err != nil {
 		fmt.Println("Error:", err)
@@ -119,7 +127,7 @@ func main() {
 		username = strings.TrimSpace(username)
 
 		if username == "" {
-			fmt.Println("⚠ Username cannot be empty! Try again.")
+			fmt.Println("Warning: Username cannot be empty! Try again.")
 
 		} else if len(username) > 10 {
 			fmt.Println("Meh tf is that username should be maximum 10 chars")
@@ -156,7 +164,7 @@ func main() {
 			command = "connect"
 			break
 		} else {
-			fmt.Println("⚠ Invalid choice! Please enter 1 or 2.")
+			fmt.Println("Warning: Invalid choice! Please enter 1 or 2.")
 		}
 	}
 
@@ -195,12 +203,25 @@ func main() {
 
 		if strings.HasPrefix(response, "CODE:") {
 			roomCode := strings.TrimPrefix(response, "CODE:")
-			fmt.Println("╔════════════════════════════════════╗")
-			fmt.Println("║         ROOM CREATED!              ║")
-			fmt.Println("╠════════════════════════════════════╣")
-			fmt.Printf("║   Code: %-26s║\n", roomCode)
-			fmt.Println("║   Share this code with friends!    ║")
-			fmt.Println("╚════════════════════════════════════╝")
+
+			// Generate encryption key for this room
+			encryptionKey, err = GenerateEncryptionKey()
+			if err != nil {
+				fmt.Println("Error generating encryption key:", err)
+				return
+			}
+
+			fmt.Println("╔══════════════════════════════════════════════════════╗")
+			fmt.Println("║              ROOM CREATED! (ENCRYPTED)               ║")
+			fmt.Println("╠══════════════════════════════════════════════════════╣")
+			fmt.Printf("║   Room Code: %-40s║\n", roomCode)
+			fmt.Println("╠══════════════════════════════════════════════════════╣")
+			fmt.Println("║   ENCRYPTION KEY (share SECURELY with friends!):     ║")
+			fmt.Printf("║   %s   ║\n", encryptionKey)
+			fmt.Println("╠══════════════════════════════════════════════════════╣")
+			fmt.Println("║   WARNING: Anyone with this key can read messages!   ║")
+			fmt.Println("║   Share via secure channel (in person, Signal, etc)  ║")
+			fmt.Println("╚══════════════════════════════════════════════════════╝")
 		} else {
 			fmt.Println("Unexpected response:", response)
 			return
@@ -221,7 +242,7 @@ func main() {
 				break
 			}
 
-			fmt.Println("⚠ Room code must be exactly 8 digits! Try again.")
+			fmt.Println("Warning: Room code must be exactly 8 digits! Try again.")
 		}
 
 		conn.Write([]byte(roomCode + "\n"))
@@ -232,13 +253,36 @@ func main() {
 
 		if strings.HasPrefix(response, "ERROR:") {
 			errorMsg := strings.TrimPrefix(response, "ERROR:")
-			fmt.Println("✗ Error:", errorMsg)
+			fmt.Println("Error:", errorMsg)
 			return
 		}
 
-		fmt.Println("╔════════════════════════════════════╗")
-		fmt.Println("║       CONNECTED TO ROOM!           ║")
-		fmt.Println("╚════════════════════════════════════╝")
+		// Ask for encryption key
+		fmt.Println("")
+		fmt.Println("Room found! Now enter the encryption key.")
+		fmt.Println("(Get this from the person who created the room)")
+		fmt.Println("")
+
+		for {
+			fmt.Print("Enter encryption key: ")
+			var err error
+			encryptionKey, err = inputReader.ReadString('\n')
+			errCheck(err)
+			encryptionKey = strings.TrimSpace(encryptionKey)
+
+			if IsValidKey(encryptionKey) {
+				break
+			}
+
+			fmt.Println("Warning: Invalid key format! Must be 44 characters (Base64). Try again.")
+		}
+
+		fmt.Println("╔══════════════════════════════════════════════════════╗")
+		fmt.Println("║         CONNECTED TO ROOM! (ENCRYPTED)               ║")
+		fmt.Println("╠══════════════════════════════════════════════════════╣")
+		fmt.Println("║   All messages are end-to-end encrypted              ║")
+		fmt.Println("║   Server cannot read your messages                   ║")
+		fmt.Println("╚══════════════════════════════════════════════════════╝")
 	}
 
 	fmt.Println("")
@@ -254,7 +298,35 @@ func main() {
 		for {
 			message, err := serverReader.ReadString('\n')
 			errCheck(err)
-			fmt.Print(message)
+
+			// Try to decrypt the message
+			// Format from server: "[username] encrypted_data\n"
+			// or system message: ">>> username joined the room\n"
+
+			message = strings.TrimSpace(message)
+
+			// Check if it's a system message (not encrypted)
+			if strings.HasPrefix(message, ">>>") || strings.HasPrefix(message, "<<<") {
+				fmt.Println(message)
+				continue
+			}
+
+			// Try to parse as encrypted message: "[username] base64_data"
+			if idx := strings.Index(message, "] "); idx != -1 {
+				prefix := message[:idx+2]    // "[username] "
+				encrypted := message[idx+2:] // encrypted part
+
+				decrypted, err := Decrypt(encrypted, encryptionKey)
+				if err != nil {
+					// If decryption fails, show as is (maybe wrong key)
+					fmt.Printf("%s[ENCRYPTED/WRONG KEY]\n", prefix)
+				} else {
+					fmt.Printf("%s%s\n", prefix, decrypted)
+				}
+			} else {
+				// Unknown format, print as is
+				fmt.Println(message)
+			}
 		}
 	}()
 
@@ -266,7 +338,23 @@ func main() {
 		message, err := inputReader.ReadString('\n')
 		errCheck(err)
 
-		_, err = conn.Write([]byte(message))
+		// Trim the message for encryption (remove newline)
+		message = strings.TrimSpace(message)
+
+		// Skip empty messages
+		if message == "" {
+			continue
+		}
+
+		// Encrypt the message before sending
+		encrypted, err := Encrypt(message, encryptionKey)
+		if err != nil {
+			fmt.Println("Error encrypting message:", err)
+			continue
+		}
+
+		// Send encrypted message (add newline back for protocol)
+		_, err = conn.Write([]byte(encrypted + "\n"))
 		errCheck(err)
 	}
 }

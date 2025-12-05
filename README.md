@@ -1,6 +1,6 @@
 # 💬 Terminal Messenger
 
-A simple terminal-based messenger written in Go. Create secure connections between your devices or chat with friends through CLI.
+A simple terminal-based messenger written in Go with **end-to-end encryption**. Create secure connections between your devices or chat with friends through CLI.
 
 ## 📁 Project Structure
 
@@ -13,6 +13,7 @@ Messenger/
 │   └── go.mod
 └── client/
     ├── client.go   # Client logic (connect, send, receive)
+    ├── crypto.go   # AES-256-GCM encryption module
     └── go.mod
 ```
 
@@ -55,26 +56,28 @@ Open a new terminal:
 cd client
 
 # Option 1: Pass IP directly
-go run client.go -ip=192.168.1.100:8080
+go run . -ip=192.168.1.100:8080
 
 # Option 2: Use environment variable
 export SERVER_IP=192.168.1.100:8080
-go run client.go
+go run .
 ```
+
+> **Note:** Use `go run .` (not `go run client.go`) to compile all files including encryption module.
 
 ## 💡 Usage
 
-1. **Create a room**: One user creates a room and gets an 8-digit code
-2. **Share the code**: Tell your friend the code
-3. **Connect**: Friend enters the code to join
-4. **Chat**: Send messages back and forth
+1. **Create a room**: One user creates a room and gets an 8-digit code + encryption key
+2. **Share securely**: Tell your friend the room code AND encryption key
+3. **Connect**: Friend enters the code and key to join
+4. **Chat**: All messages are end-to-end encrypted (server can't read them)
 
 ## 🔧 Configuration
 
 | Method | Example |
 |--------|---------|
-| Flag | `go run client.go -ip=192.168.1.100:8080` |
-| Environment | `export SERVER_IP=192.168.1.100:8080` |
+| Flag | `go run . -ip=192.168.1.100:8080` |
+| Environment | `export SERVER_IP=192.168.1.100:8080 && go run .` |
 
 Port `8080` is added automatically if not specified.
 
