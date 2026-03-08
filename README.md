@@ -1,86 +1,76 @@
-# 💬 Terminal Messenger
+# Terminal Messenger (CLI, End-to-End Encrypted)
 
-A simple terminal-based messenger written in Go with **end-to-end encryption**. Create secure connections between your devices or chat with friends through CLI.
+Terminal Messenger is a TCP CLI chat with end-to-end message encryption (AES-256-GCM), typed JSONL protocol, reconnect support, delivery acknowledgements, and encrypted local history.
 
-## 📁 Project Structure
+## Highlights
 
-```
+- Strict typed protocol (`version`, `type`, `id`, `room`, `sender`, `payload`, `ts`)
+- Room tokens generated with `crypto/rand` + base32
+- Per-client outbound queues on server (no socket writes under room lock)
+- Client retry + ack flow for more reliable delivery
+- Graceful shutdown and reconnect attempts
+- Slash commands: `/help`, `/users`, `/nick`, `/leave`, `/rekey`, `/history`, `/export`
+- Encrypted local history in `~/.messenger/history`
+- Client config in `~/.messenger/config.toml` (server, username, aliases)
+
+## Project Structure
+
+```text
 Messenger/
 ├── server/
-│   ├── server.go   # Main server logic
-│   ├── room.go     # Room management (create, join, broadcast)
-│   ├── code.go     # Funny 8-digit room code generator
-│   └── go.mod
-└── client/
-    ├── client.go   # Client logic (connect, send, receive)
-    ├── crypto.go   # AES-256-GCM encryption module
-    └── go.mod
+│   ├── cmd/server/main.go
+│   ├── internal/protocol/
+│   ├── internal/room/
+│   └── internal/transport/
+├── client/
+│   ├── cmd/client/main.go
+│   ├── internal/config/
+│   ├── internal/crypto/
+│   ├── internal/history/
+│   ├── internal/protocol/
+│   ├── internal/session/
+│   └── internal/ui/
+├── docs/
+└── AGENTS.md
 ```
 
-## 🚀 Quick Start
+## Run
 
-### 1. Clone the repository
-
-```bash
-git clone https://github.com/TimofeySukh/Messenger.git
-cd Messenger
-```
-
-### 2. Install Go (if not installed)
-
-```bash
-# Ubuntu/Debian
-sudo apt install golang
-
-# Fedora
-sudo dnf install golang
-
-# macOS
-brew install go
-```
-
-### 3. Run the server
+### Server
 
 ```bash
 cd server
-go run .
+go run ./cmd/server
 ```
 
-Server will start on port `8080`.
-
-### 4. Run the client
-
-Open a new terminal:
+### Client
 
 ```bash
 cd client
+# create room
+go run ./cmd/client -ip=127.0.0.1:8080 -mode=create -username=alice
 
-# Option 1: Pass IP directly
-go run . -ip=192.168.1.100:8080
-
-# Option 2: Use environment variable
-export SERVER_IP=192.168.1.100:8080
-go run .
+# join room
+go run ./cmd/client -ip=127.0.0.1:8080 -mode=join -username=bob -room=<ROOM_TOKEN> -key=<ROOM_KEY>
 ```
 
-> **Note:** Use `go run .` (not `go run client.go`) to compile all files including encryption module.
+## CLI Commands
 
-## 💡 Usage
+- `/help` show command list
+- `/users` request users in current room
+- `/nick <name>` update nickname
+- `/leave` leave room and exit
+- `/rekey` rotate room key (distributed through encrypted control message)
+- `/history [n]` show last `n` locally stored messages (default 20)
+- `/export <path>` export decrypted local history to a text file
 
-1. **Create a room**: One user creates a room and gets an 8-digit code + encryption key
-2. **Share securely**: Tell your friend the room code AND encryption key
-3. **Connect**: Friend enters the code and key to join
-4. **Chat**: All messages are end-to-end encrypted (server can't read them)
+## Tests
 
-## 🔧 Configuration
+```bash
+cd server && go test ./...
+cd client && go test ./...
+```
 
-| Method | Example |
-|--------|---------|
-| Flag | `go run . -ip=192.168.1.100:8080` |
-| Environment | `export SERVER_IP=192.168.1.100:8080 && go run .` |
+## Documentation
 
-Port `8080` is added automatically if not specified.
-
-## 📝 License
-
-MIT
+Detailed architecture and file-level breakdown is in [`docs/`](./docs).
